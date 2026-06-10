@@ -21,6 +21,8 @@ An autonomous AI agent that controls an Android phone. Runs entirely offline usi
 ## Current Status
 
 🚧 Early development. Core script is working. Screen detection and multi-step verification are in progress.
+- Screen text detection (OCR) via Tesseract is working
+
 
 ## How It Works
 
