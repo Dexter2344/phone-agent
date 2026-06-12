@@ -7,6 +7,15 @@ All offline.
 
 import subprocess
 import os
+import logging
+
+logger=logging.getLogger(__name__)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
 
 def capture_screenshot(filename="screen.png"):
     """Take a screenshot using ADB and save it locally."""
@@ -42,36 +51,52 @@ def extract_text(image_path):
 
 def levenshtein_distance(s1, s2):
     """Calculate Levenshtein distance for fuzzy matching."""
-    if len(s1) < len(s2):
-        return levenshtein_distance(s2, s1)
-    if len(s2) == 0:
-        return len(s1)
-    previous_row = range(len(s2) + 1)
-    for i, c1 in enumerate(s1):
-        current_row = [i + 1]
-        for j, c2 in enumerate(s2):
-            insertions = previous_row[j + 1] + 1
-            deletions = current_row[j] + 1
-            substitutions = previous_row[j] + (c1 != c2)
-            current_row.append(min(insertions, deletions, substitutions))
-        previous_row = current_row
-    return previous_row[-1]
+    try:
+        if len(s1) < len(s2):
+            return levenshtein_distance(s2, s1)
+        if len(s2) == 0:
+            return len(s1)
+        previous_row = range(len(s2) + 1)
+        for i, c1 in enumerate(s1):
+            current_row = [i + 1]
+            for j, c2 in enumerate(s2):
+                insertions = previous_row[j + 1] + 1
+                deletions = current_row[j] + 1
+                substitutions = previous_row[j] + (c1 != c2)
+                current_row.append(min(insertions, deletions, substitutions))
+            previous_row = current_row
+        logger.info("Successfully calculated levenshtein distance")
+        return previous_row[-1]
+    except Exception:
+        logger.exception("Failed to calculate Levenshtein distance for fuzzy matching")
+        raise
 
 
 def fuzzy_match(target, candidate, threshold=0.8):
     """Check if candidate matches target within similarity threshold."""
-    target_lower = target.lower().strip()
-    candidate_lower = candidate.lower().strip()
-    if target_lower == candidate_lower:
-        return True
-    if target_lower in candidate_lower or candidate_lower in target_lower:
-        return True
-    max_len = max(len(target_lower), len(candidate_lower))
-    if max_len == 0:
-        return True
-    distance = levenshtein_distance(target_lower, candidate_lower)
-    similarity = 1 - (distance / max_len)
-    return similarity >= threshold
+    try:
+        target_lower = target.lower().strip()
+        candidate_lower = candidate.lower().strip()
+        if target_lower == candidate_lower:
+            return True
+        if target_lower in candidate_lower or candidate_lower in target_lower:
+            return True
+        max_len = max(len(target_lower), len(candidate_lower))
+        if max_len == 0:
+            return True
+        distance = levenshtein_distance(target_lower, candidate_lower)
+        similarity = 1 - (distance / max_len)
+        logger.debug(
+            "Similarity between '%s' and '%s': %.2f",
+            target,
+            candidate,
+            similarity
+        )
+        logger.info("Successful in fuzzy matching")
+        return similarity >= threshold
+    except Exception:
+        logger.exception("Failed in fuzzy matching")
+        raise
 
 
 def find_text_location(image_path, target_text):
