@@ -25,6 +25,9 @@ An autonomous AI agent that controls an Android phone. Runs entirely offline usi
 - Fuzzy text matching handles OCR errors
 - Verification layer confirms each action succeeded
 - First full 3-step task completed: open app → find contact → send message
+- - ML Kit integration: screen scans now 5x faster (1.5-2s vs 8-12s)
+- Interruption handler: dismisses calls, notifications, dialogs before tasks
+- Multi-backend vision: ML Kit primary, Tesseract fallback
 
 
 ## How It Works
