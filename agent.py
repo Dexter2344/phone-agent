@@ -1,14 +1,17 @@
 """
-Phone Agent - Day 4
-Takes natural language commands, parses via Gemma 4,
-executes phone actions via ADB, and verifies each step.
+Phone Agent - Day 6
+Natural language → Gemma 4 → ADB commands.
+Includes multi-backend OCR, verification layer, and interruption handler.
 """
 
 import requests
 import subprocess
 import json
 import time
-from vision import capture_screenshot, extract_text, find_text_location, tap_coordinates
+from vision import (
+    capture_screenshot, extract_text, find_text_location,
+    tap_coordinates, dismiss_interruptions
+)
 
 OLLAMA_API = "http://localhost:11434/api/generate"
 MODEL = "gemma4:4b"
@@ -24,8 +27,7 @@ def ask_ollama(prompt):
         response = requests.post(OLLAMA_API, json=payload, timeout=60)
         if response.status_code == 200:
             return response.json().get("response", "No response.")
-        else:
-            return f"API error: {response.status_code}"
+        return f"API error: {response.status_code}"
     except Exception as e:
         return f"Error: {str(e)}"
 
@@ -39,13 +41,10 @@ def run_adb(command):
         return f"ADB error: {str(e)}"
 
 def parse_command(user_input):
-    prompt = f"""You are a phone automation agent. Break the following user command into a sequence of simple steps. Each step should be a single phone action: open_app, tap, type, swipe, or wait.
-
-User command: {user_input}
-
-Respond in JSON format:
-{{"steps": [{{"action": "open_app", "target": "app_name"}}, {{"action": "tap", "target": "button_name"}}, ...]}}
-
+    prompt = f"""You are a phone automation agent. Break this command into steps.
+Each step: open_app, tap, type, swipe, or wait.
+Command: {user_input}
+Respond in JSON: {{"steps": [{{"action": "...", "target": "..."}}]}}
 JSON:"""
     response = ask_ollama(prompt)
     try:
@@ -53,7 +52,7 @@ JSON:"""
     except:
         return {"error": "Could not parse steps", "raw": response}
 
-def verify_action(expected_text, timeout=5):
+def verify_action(expected_text):
     time.sleep(1)
     for attempt in range(3):
         img = capture_screenshot(f"verify_{attempt}.png")
@@ -68,7 +67,7 @@ def verify_action(expected_text, timeout=5):
 def execute_step(step):
     action = step.get("action", "")
     target = step.get("target", "")
-    
+
     if action == "open_app":
         run_adb(f"adb shell monkey -p com.{target.lower()} -c android.intent.category.LAUNCHER 1")
         time.sleep(2)
@@ -78,8 +77,10 @@ def execute_step(step):
             run_adb(f"adb shell monkey -p com.{target.lower()} -c android.intent.category.LAUNCHER 1")
             time.sleep(2)
             return verify_action(target[:5]), f"Opened {target} (retry)"
-    
+
     elif action == "tap":
+        # NEW: Check for interruptions before tapping
+        dismiss_interruptions()
         img = capture_screenshot("tap_target.png")
         if img:
             coords = find_text_location(img, target)
@@ -88,21 +89,19 @@ def execute_step(step):
                 time.sleep(1)
                 if verify_action(target[:5]):
                     return True, f"Tapped {target}"
-                else:
-                    return False, f"Tapped {target} but verification failed"
-            else:
-                return False, f"Could not find {target} on screen"
-        return False, "Screenshot failed for tap"
-    
+                return False, f"Tapped {target} but verification failed"
+            return False, f"Could not find {target} on screen"
+        return False, "Screenshot failed"
+
     elif action == "type":
         run_adb(f'adb shell input text "{target}"')
         return True, f"Typed: {target}"
-    
+
     elif action == "wait":
         seconds = int(target) if target.isdigit() else 2
         time.sleep(seconds)
         return True, f"Waited {seconds}s"
-    
+
     return False, f"Unknown action: {action}"
 
 def run_task(user_command):
@@ -120,11 +119,11 @@ def run_task(user_command):
         status = "✅" if success else "❌"
         print(f"  {status} {message}")
         if not success:
-            print("Task aborted due to failure.")
+            print("Task aborted.")
             return
     print("\n✅ Task completed.")
 
 if __name__ == "__main__":
-    print("Phone Agent v4 - With Verification Layer")
+    print("Phone Agent v6 - ML Kit + Interruption Handler")
     print("ADB:", run_adb("adb devices"))
     print("Ollama:", ask_ollama("Say 'ready'"))
