@@ -1,13 +1,76 @@
 """
-Phone Agent - Vision Module (v2)
-Handles screenshot capture, OCR text extraction,
-fuzzy text matching, and text-to-coordinate mapping.
+Phone Agent - Vision Module (v3)
+Multi-backend OCR: Google ML Kit (primary) + Tesseract (fallback).
+Includes fuzzy text matching and text-to-coordinate mapping.
 All offline.
 """
 
 import subprocess
 import os
+import requests
 
+# ---- Tesseract OCR ----
+def tesseract_extract(image_path):
+    """Run Tesseract OCR on an image. Returns extracted text."""
+    try:
+        result = subprocess.run(
+            ["tesseract", image_path, "stdout"],
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+        return result.stdout.strip()
+    except FileNotFoundError:
+        return "Tesseract not installed."
+    except Exception as e:
+        return f"Tesseract error: {e}"
+
+# ---- ML Kit OCR (Primary, faster) ----
+def mlkit_extract(image_path):
+    """
+    Send screenshot to local ML Kit service for text recognition.
+    Requires ML Kit running as a service in Termux on localhost:8080.
+    Returns structured text with bounding boxes, or None if service unavailable.
+    """
+    try:
+        with open(image_path, "rb") as f:
+            files = {"image": f}
+            response = requests.post(
+                "http://localhost:8080/text",
+                files=files,
+                timeout=10
+            )
+        if response.status_code == 200:
+            data = response.json()
+            # ML Kit returns blocks → lines → text
+            texts = []
+            for block in data.get("textBlocks", []):
+                for line in block.get("lines", []):
+                    texts.append(line.get("text", ""))
+            return "\n".join(texts)
+        else:
+            return None
+    except requests.exceptions.ConnectionError:
+        return None  # ML Kit service not running
+    except Exception as e:
+        print(f"ML Kit error: {e}")
+        return None
+
+# ---- Unified Extraction (Primary + Fallback) ----
+def extract_text(image_path):
+    """
+    Try ML Kit first. If unavailable, fall back to Tesseract.
+    Returns clean extracted text.
+    """
+    # Try ML Kit first (faster, more accurate)
+    result = mlkit_extract(image_path)
+    if result is not None:
+        return result
+
+    # Fall back to Tesseract
+    return tesseract_extract(image_path)
+
+# ---- Screenshot Capture ----
 def capture_screenshot(filename="screen.png"):
     """Take a screenshot using ADB and save it locally."""
     try:
@@ -23,23 +86,7 @@ def capture_screenshot(filename="screen.png"):
         print(f"Screenshot error: {e}")
         return None
 
-
-def extract_text(image_path):
-    """Run Tesseract OCR on an image and return extracted text."""
-    try:
-        result = subprocess.run(
-            ["tesseract", image_path, "stdout"],
-            capture_output=True,
-            text=True,
-            timeout=30
-        )
-        return result.stdout.strip()
-    except FileNotFoundError:
-        return "Tesseract not installed. Run: pkg install tesseract"
-    except Exception as e:
-        return f"OCR error: {e}"
-
-
+# ---- Fuzzy Text Matching ----
 def levenshtein_distance(s1, s2):
     """Calculate Levenshtein distance for fuzzy matching."""
     if len(s1) < len(s2):
@@ -57,7 +104,6 @@ def levenshtein_distance(s1, s2):
         previous_row = current_row
     return previous_row[-1]
 
-
 def fuzzy_match(target, candidate, threshold=0.8):
     """Check if candidate matches target within similarity threshold."""
     target_lower = target.lower().strip()
@@ -73,9 +119,9 @@ def fuzzy_match(target, candidate, threshold=0.8):
     similarity = 1 - (distance / max_len)
     return similarity >= threshold
 
-
+# ---- Text-to-Coordinate Mapping ----
 def find_text_location(image_path, target_text):
-    """Find bounding box coordinates of target text using fuzzy matching."""
+    """Find coordinates of target text using Tesseract TSV output."""
     try:
         output_base = "ocr_output"
         subprocess.run(
@@ -106,7 +152,7 @@ def find_text_location(image_path, target_text):
         print(f"Text location error: {e}")
         return None
 
-
+# ---- Tap Coordinates ----
 def tap_coordinates(x, y):
     """Tap at specific screen coordinates via ADB."""
     subprocess.run(
@@ -115,11 +161,54 @@ def tap_coordinates(x, y):
         timeout=10
     )
 
+# ---- Interruption Handler (NEW) ----
+INTERRUPTION_PATTERNS = [
+    "incoming call", "accept", "decline",
+    "update available", "update now", "later",
+    "notification", "allow", "deny",
+    "screen locked", "unlock"
+]
 
+def detect_interruption(image_path):
+    """
+    Scan screen for known interruption patterns.
+    Returns True if an interruption is detected.
+    """
+    screen_text = extract_text(image_path).lower()
+    for pattern in INTERRUPTION_PATTERNS:
+        if pattern in screen_text:
+            return True
+    return False
+
+def dismiss_interruptions():
+    """
+    If an interruption is detected, dismiss it.
+    Presses back button and waits for UI to settle.
+    """
+    for attempt in range(3):
+        img = capture_screenshot("interrupt_check.png")
+        if not img:
+            return False
+        if not detect_interruption(img):
+            return True  # No interruption found
+        # Press back to dismiss
+        subprocess.run(
+            ["adb", "shell", "input", "keyevent", "4"],
+            capture_output=True,
+            timeout=5
+        )
+        import time
+        time.sleep(1.5)
+    return False  # Still interrupted after 3 attempts
+
+# ---- Test ----
 if __name__ == "__main__":
-    print("Phone Agent - Vision Module v2 (with Fuzzy Matching)")
+    print("Phone Agent - Vision Module v3")
+    print("Backends: ML Kit (primary) + Tesseract (fallback)")
+
+    # Test extraction
     img = capture_screenshot()
     if img:
-        print(f"Screenshot saved: {img}")
         text = extract_text(img)
         print(f"Extracted {len(text)} characters.")
+        print(f"First 100 chars: {text[:100]}...")
