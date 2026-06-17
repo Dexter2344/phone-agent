@@ -28,6 +28,8 @@ An autonomous AI agent that controls an Android phone. Runs entirely offline usi
 - - ML Kit integration: screen scans now 5x faster (1.5-2s vs 8-12s)
 - Interruption handler: dismisses calls, notifications, dialogs before tasks
 - Multi-backend vision: ML Kit primary, Tesseract fallback
+- - Template matching module added for icon detection (OpenCV primary, NumPy fallback)
+- Icon reference library folder created
 
 
 ## How It Works
