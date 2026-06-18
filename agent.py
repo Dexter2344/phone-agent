@@ -1,22 +1,25 @@
 """
-Phone Agent - Day 6
+Phone Agent - Day 8
 Natural language → Gemma 4 → ADB commands.
-Includes multi-backend OCR, verification layer, and interruption handler.
+Multi-backend OCR, verification layer, interruption handler,
+and template matching fallback for icon detection.
 """
 
 import requests
 import subprocess
 import json
 import time
+import os
 from vision import (
     capture_screenshot, extract_text, find_text_location,
-    tap_coordinates, dismiss_interruptions
+    tap_coordinates, dismiss_interruptions, match_template
 )
 
 OLLAMA_API = "http://localhost:11434/api/generate"
 MODEL = "gemma4:4b"
 
 def ask_ollama(prompt):
+    """Send a prompt to the local Gemma 4 model."""
     payload = {
         "model": MODEL,
         "prompt": prompt,
@@ -32,6 +35,7 @@ def ask_ollama(prompt):
         return f"Error: {str(e)}"
 
 def run_adb(command):
+    """Execute an ADB command and return output."""
     try:
         result = subprocess.run(
             command.split(), capture_output=True, text=True, timeout=30
@@ -41,6 +45,7 @@ def run_adb(command):
         return f"ADB error: {str(e)}"
 
 def parse_command(user_input):
+    """Ask Gemma 4 to break a natural language command into steps."""
     prompt = f"""You are a phone automation agent. Break this command into steps.
 Each step: open_app, tap, type, swipe, or wait.
 Command: {user_input}
@@ -53,6 +58,7 @@ JSON:"""
         return {"error": "Could not parse steps", "raw": response}
 
 def verify_action(expected_text):
+    """Take a screenshot and verify expected text appeared."""
     time.sleep(1)
     for attempt in range(3):
         img = capture_screenshot(f"verify_{attempt}.png")
@@ -65,6 +71,7 @@ def verify_action(expected_text):
     return False
 
 def execute_step(step):
+    """Execute a single step with OCR + template matching fallback."""
     action = step.get("action", "")
     target = step.get("target", "")
 
@@ -79,19 +86,32 @@ def execute_step(step):
             return verify_action(target[:5]), f"Opened {target} (retry)"
 
     elif action == "tap":
-        # NEW: Check for interruptions before tapping
+        # Check for interruptions before tapping
         dismiss_interruptions()
+        
         img = capture_screenshot("tap_target.png")
-        if img:
-            coords = find_text_location(img, target)
-            if coords:
-                tap_coordinates(coords[0], coords[1])
-                time.sleep(1)
-                if verify_action(target[:5]):
-                    return True, f"Tapped {target}"
-                return False, f"Tapped {target} but verification failed"
-            return False, f"Could not find {target} on screen"
-        return False, "Screenshot failed"
+        if not img:
+            return False, "Screenshot failed"
+        
+        # Try OCR first
+        coords = find_text_location(img, target)
+        
+        # If OCR fails, try template matching
+        if not coords:
+            print(f"  OCR failed for '{target}'. Trying template matching...")
+            icon_path = f"{target.lower().replace(' ', '_')}.png"
+            if os.path.exists(icon_path):
+                coords = match_template(img, icon_path)
+            else:
+                print(f"  No icon reference found for '{target}'")
+        
+        if coords:
+            tap_coordinates(coords[0], coords[1])
+            time.sleep(1)
+            if verify_action(target[:5]):
+                return True, f"Tapped {target}"
+            return False, f"Tapped {target} but verification failed"
+        return False, f"Could not find {target} on screen (OCR + template matching)"
 
     elif action == "type":
         run_adb(f'adb shell input text "{target}"')
@@ -105,6 +125,7 @@ def execute_step(step):
     return False, f"Unknown action: {action}"
 
 def run_task(user_command):
+    """Full pipeline: parse, execute, verify."""
     print(f"\nTask: {user_command}")
     print("-" * 40)
     plan = parse_command(user_command)
@@ -124,6 +145,6 @@ def run_task(user_command):
     print("\n✅ Task completed.")
 
 if __name__ == "__main__":
-    print("Phone Agent v6 - ML Kit + Interruption Handler")
+    print("Phone Agent v8 - Template Matching + OCR")
     print("ADB:", run_adb("adb devices"))
     print("Ollama:", ask_ollama("Say 'ready'"))
