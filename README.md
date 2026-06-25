@@ -32,6 +32,9 @@ An autonomous AI agent that controls an Android phone. Runs entirely offline usi
 - Template matching wired into agent as OCR fallback
 - Icon library: send_button.png, back_button.png, search_button.png
 - Full pipeline test passed: open WhatsApp → find contact → type → detect send icon → tap → verify
+- - UI hierarchy inspection added as primary vision method
+- Unified target finder: UI tree → OCR → template matching
+- Element detection now works across different devices without reference images
 
 ## How It Works
 
