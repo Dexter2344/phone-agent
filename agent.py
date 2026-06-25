@@ -1,8 +1,7 @@
 """
-Phone Agent - Day 8
+Phone Agent - Day 10
 Natural language → Gemma 4 → ADB commands.
-Multi-backend OCR, verification layer, interruption handler,
-and template matching fallback for icon detection.
+Vision: UI tree primary, OCR + template matching fallback.
 """
 
 import requests
@@ -11,8 +10,8 @@ import json
 import time
 import os
 from vision import (
-    capture_screenshot, extract_text, find_text_location,
-    tap_coordinates, dismiss_interruptions, match_template
+    capture_screenshot, extract_text, find_target,
+    tap_coordinates, dismiss_interruptions
 )
 
 OLLAMA_API = "http://localhost:11434/api/generate"
@@ -71,7 +70,7 @@ def verify_action(expected_text):
     return False
 
 def execute_step(step):
-    """Execute a single step with OCR + template matching fallback."""
+    """Execute a single step using UI tree, OCR, and template matching fallbacks."""
     action = step.get("action", "")
     target = step.get("target", "")
 
@@ -86,32 +85,15 @@ def execute_step(step):
             return verify_action(target[:5]), f"Opened {target} (retry)"
 
     elif action == "tap":
-        # Check for interruptions before tapping
         dismiss_interruptions()
-        
-        img = capture_screenshot("tap_target.png")
-        if not img:
-            return False, "Screenshot failed"
-        
-        # Try OCR first
-        coords = find_text_location(img, target)
-        
-        # If OCR fails, try template matching
-        if not coords:
-            print(f"  OCR failed for '{target}'. Trying template matching...")
-            icon_path = f"{target.lower().replace(' ', '_')}.png"
-            if os.path.exists(icon_path):
-                coords = match_template(img, icon_path)
-            else:
-                print(f"  No icon reference found for '{target}'")
-        
+        coords = find_target(target)
         if coords:
             tap_coordinates(coords[0], coords[1])
             time.sleep(1)
             if verify_action(target[:5]):
                 return True, f"Tapped {target}"
             return False, f"Tapped {target} but verification failed"
-        return False, f"Could not find {target} on screen (OCR + template matching)"
+        return False, f"Could not find {target} on screen"
 
     elif action == "type":
         run_adb(f'adb shell input text "{target}"')
@@ -145,6 +127,6 @@ def run_task(user_command):
     print("\n✅ Task completed.")
 
 if __name__ == "__main__":
-    print("Phone Agent v8 - Template Matching + OCR")
+    print("Phone Agent v10 - UI Tree Vision")
     print("ADB:", run_adb("adb devices"))
     print("Ollama:", ask_ollama("Say 'ready'"))
