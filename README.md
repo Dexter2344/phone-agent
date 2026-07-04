@@ -34,7 +34,25 @@ An autonomous AI agent that controls an Android phone. Runs entirely offline usi
 - Full pipeline test passed: open WhatsApp → find contact → type → detect send icon → tap → verify
 - - UI hierarchy inspection added as primary vision method
 - Unified target finder: UI tree → OCR → template matching
-- Element detection now works across different devices without reference images
+- Element detection now works across different devices without reference
+- - Accessibility audit completed for 15 popular Android apps
+- Scoring system created: A (fully automatable) to F (completely inaccessible)
+- WhatsApp & Google apps score A. Local banking/government apps score D or F.
+- Public accessibility score list in development
+
+ ## Accessibility Audit
+
+The agent doubles as an accessibility tester. Apps with rich UI labels are automatable. Apps without labels are invisible to both AI and screen readers.
+
+| Score | Meaning | Example Apps |
+|-------|---------|--------------|
+| A | Fully automatable. Rich accessibility labels. | WhatsApp, Gmail, Google Maps |
+| B | Mostly automatable. Good labels with gaps. | Spotify, Slack |
+| C | Partially automatable. Some labels. | - |
+| D | Mostly blind. Few labels. Heavy OCR fallback. | Local food delivery apps |
+| F | Completely inaccessible. No labels. | Most banking & government apps |
+
+Full audit list coming soon.
 
 ## How It Works
 
