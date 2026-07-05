@@ -6,11 +6,13 @@ Fallback: ML Kit OCR + Tesseract OCR + Template Matching.
 
 import subprocess
 import os
+import logging
 import xml.etree.ElementTree as ET
 import requests
 import numpy as np
 import time
 
+logger = logging.getLogger(__name__)
 # ============================================================
 # 1. UI HIERARCHY INSPECTION (PRIMARY - NEW)
 # ============================================================
@@ -105,6 +107,7 @@ def find_element_center(root, identifier):
 # 2. SCREENSHOT CAPTURE (FALLBACK)
 # ============================================================
 
+
 def capture_screenshot(filename="screen.png"):
     """Take a screenshot using ADB and save it locally."""
     try:
@@ -171,20 +174,93 @@ def extract_text(image_path):
 # ============================================================
 
 def levenshtein_distance(s1, s2):
-    if len(s1) < len(s2):
-        return levenshtein_distance(s2, s1)
-    if len(s2) == 0:
-        return len(s1)
-    previous_row = range(len(s2) + 1)
-    for i, c1 in enumerate(s1):
-        current_row = [i + 1]
-        for j, c2 in enumerate(s2):
-            insertions = previous_row[j + 1] + 1
-            deletions = current_row[j] + 1
-            substitutions = previous_row[j] + (c1 != c2)
-            current_row.append(min(insertions, deletions, substitutions))
-        previous_row = current_row
-    return previous_row[-1]
+    """Calculate Levenshtein distance for fuzzy matching."""
+
+    try:
+        if len(s1) < len(s2):
+            return levenshtein_distance(s2, s1)
+
+        if len(s2) == 0:
+            return len(s1)
+
+        previous_row = range(len(s2) + 1)
+
+        for i, c1 in enumerate(s1):
+            current_row = [i + 1]
+
+            for j, c2 in enumerate(s2):
+                insertions = previous_row[j + 1] + 1
+                deletions = current_row[j] + 1
+                substitutions = previous_row[j] + (c1 != c2)
+
+                current_row.append(
+                    min(insertions, deletions, substitutions)
+                )
+
+            previous_row = current_row
+
+        logger.info(
+            "Successfully calculated levenshtein distance"
+        )
+
+        return previous_row[-1]
+
+    except Exception:
+        logger.exception(
+            "Failed to calculate Levenshtein distance"
+        )
+        raise
+
+
+def fuzzy_match(target, candidate, threshold=0.8):
+    """Check if candidate matches target within similarity threshold."""
+
+    try:
+        target_lower = target.lower().strip()
+        candidate_lower = candidate.lower().strip()
+
+        if target_lower == candidate_lower:
+            return True
+
+        if (
+            target_lower in candidate_lower
+            or candidate_lower in target_lower
+        ):
+            return True
+
+        max_len = max(
+            len(target_lower),
+            len(candidate_lower)
+        )
+
+        if max_len == 0:
+            return True
+
+        distance = levenshtein_distance(
+            target_lower,
+            candidate_lower
+        )
+
+        similarity = 1 - (distance / max_len)
+
+        logger.debug(
+            "Similarity between '%s' and '%s': %.2f",
+            target,
+            candidate,
+            similarity
+        )
+
+        logger.info(
+            "Successful in fuzzy matching"
+        )
+
+        return similarity >= threshold
+
+    except Exception:
+        logger.exception(
+            "Failed in fuzzy matching"
+        )
+        raise
 
 
 def fuzzy_match(target, candidate, threshold=0.8):
@@ -200,6 +276,7 @@ def fuzzy_match(target, candidate, threshold=0.8):
     distance = levenshtein_distance(target_lower, candidate_lower)
     similarity = 1 - (distance / max_len)
     return similarity >= threshold
+
 
 
 # ============================================================
