@@ -39,6 +39,10 @@ An autonomous AI agent that controls an Android phone. Runs entirely offline usi
 - Scoring system created: A (fully automatable) to F (completely inaccessible)
 - WhatsApp & Google apps score A. Local banking/government apps score D or F.
 - Public accessibility score list in development
+- Multi-app workflows supported via task memory system
+- Agent can switch between apps and carry data across them
+- First multi-app task completed: copy bank balance → send via WhatsApp
+  
 
  ## Accessibility Audit
 
