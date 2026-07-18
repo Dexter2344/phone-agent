@@ -1,7 +1,8 @@
 """
-Phone Agent - Vision Module (v4)
+Phone Agent - Vision Module (v5)
 Primary: Android UI Hierarchy Inspection (uiautomator dump).
 Fallback: ML Kit OCR + Tesseract OCR + Template Matching.
+Verification: Numeric data validation for financial information.
 """
 
 import subprocess
@@ -10,16 +11,14 @@ import xml.etree.ElementTree as ET
 import requests
 import numpy as np
 import time
+import re
 
 # ============================================================
-# 1. UI HIERARCHY INSPECTION (PRIMARY - NEW)
+# 1. UI HIERARCHY INSPECTION (PRIMARY)
 # ============================================================
 
 def get_ui_tree():
-    """
-    Dump the current screen's UI hierarchy using uiautomator.
-    Returns the root Element of the XML tree, or None on failure.
-    """
+    """Dump the current screen's UI hierarchy using uiautomator."""
     try:
         subprocess.run(
             ["adb", "shell", "uiautomator", "dump", "/sdcard/ui_tree.xml"],
@@ -342,7 +341,6 @@ def find_target(target):
     Find a target on screen and return its center coordinates.
     Tries UI tree first, then OCR, then template matching.
     """
-    # 1. Try UI tree
     root = get_ui_tree()
     if root is not None:
         coords = find_element_center(root, target)
@@ -354,7 +352,6 @@ def find_target(target):
     else:
         print("  UI tree unavailable. Trying OCR...")
     
-    # 2. Try OCR on screenshot
     img = capture_screenshot("target_search.png")
     if img:
         coords = find_text_location(img, target)
@@ -366,7 +363,6 @@ def find_target(target):
     else:
         print("  Screenshot failed. Trying template matching...")
     
-    # 3. Try template matching
     icon_path = f"{target.lower().replace(' ', '_')}.png"
     if os.path.exists(icon_path):
         img = capture_screenshot("template_search.png")
@@ -381,12 +377,85 @@ def find_target(target):
 
 
 # ============================================================
-# 9. TEST
+# 9. NUMERIC VERIFICATION FOR FINANCIAL DATA (NEW - Day 17)
+# ============================================================
+
+def verify_financial_data():
+    """
+    Verify that extracted text contains valid financial data.
+    Uses double-read confirmation, format validation, and range checking.
+    
+    Returns:
+        (is_valid: bool, extracted_value: str, confidence: str)
+    """
+    # Capture and read twice
+    img1 = capture_screenshot("verify_finance_1.png")
+    if not img1:
+        return False, "", "Screenshot failed"
+    text1 = extract_text(img1)
+    
+    img2 = capture_screenshot("verify_finance_2.png")
+    if not img2:
+        return False, "", "Screenshot failed"
+    text2 = extract_text(img2)
+    
+    # Extract numbers from both readings
+    pattern = r'[₦$£€]?\s?\d{1,3}(?:,\d{3})*(?:\.\d{2})?'
+    
+    matches1 = re.findall(pattern, text1)
+    matches2 = re.findall(pattern, text2)
+    
+    if not matches1 or not matches2:
+        return False, "", "No currency values found"
+    
+    def clean_number(num_str):
+        return num_str.replace('₦', '').replace('$', '').replace('£', '').replace('€', '').replace(',', '').strip()
+    
+    num1 = clean_number(matches1[0])
+    num2 = clean_number(matches2[0])
+    
+    # Compare readings
+    if num1 == num2:
+        try:
+            value = float(num1)
+            if 1 <= value <= 1000000000:
+                return True, matches1[0], "High confidence (double-read match)"
+            else:
+                return False, matches1[0], "Value out of reasonable range"
+        except ValueError:
+            return False, num1, "Cannot parse as number"
+    
+    # Reads differ. Try a third time.
+    print("  Verification: Reads differ. Trying third capture...")
+    img3 = capture_screenshot("verify_finance_3.png")
+    if not img3:
+        return True, matches1[0], "Low confidence (reads differed, no tiebreaker)"
+    
+    text3 = extract_text(img3)
+    matches3 = re.findall(pattern, text3)
+    
+    if not matches3:
+        return True, matches1[0], "Low confidence (reads differed, third failed)"
+    
+    num3 = clean_number(matches3[0])
+    
+    # Best of three
+    if num1 == num3:
+        return True, matches1[0], "Medium confidence (2 of 3 match)"
+    elif num2 == num3:
+        return True, matches2[0], "Medium confidence (2 of 3 match)"
+    else:
+        return True, matches1[0], "Very low confidence (all 3 reads differ)"
+
+
+# ============================================================
+# 10. TEST
 # ============================================================
 
 if __name__ == "__main__":
-    print("Phone Agent - Vision Module v4")
+    print("Phone Agent - Vision Module v5")
     print("Primary: UI Tree | Fallback: ML Kit + Tesseract + Template Matching")
+    print("Verification: Numeric data validation for financial information")
     
     root = get_ui_tree()
     if root is not None:
