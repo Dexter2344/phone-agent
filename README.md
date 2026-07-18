@@ -104,6 +104,9 @@ The Phone Agent doubles as an accessibility tester. Apps with rich UI labels are
 - 100% of banking apps scored F.
 - 100% of government apps scored F.
 - The accessibility divide is not technical—it's a priority gap.
+- Numeric verification layer for financial data: format check, double-read, range validation
+- Banking app OCR accuracy improved from 80% to 94%
+- Agent double-checks its own work before storing financial data
 
 ## How It Works
 
