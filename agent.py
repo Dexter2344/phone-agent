@@ -1,7 +1,8 @@
 """
-Phone Agent - Day 16
+Phone Agent - Day 17
 Natural language → Gemma 4 → ADB commands.
-Multi-app workflows with task memory and home screen reset.
+Multi-app workflows with task memory, home screen reset,
+and numeric verification for financial data.
 Vision: UI tree primary, OCR + template matching fallback.
 """
 
@@ -12,7 +13,7 @@ import time
 import os
 from vision import (
     capture_screenshot, extract_text, find_target,
-    tap_coordinates, dismiss_interruptions
+    tap_coordinates, dismiss_interruptions, verify_financial_data
 )
 
 OLLAMA_API = "http://localhost:11434/api/generate"
@@ -43,8 +44,7 @@ def clear_memory():
 def go_home():
     """
     Return to the home screen before switching apps.
-    This prevents apps from resuming to the wrong screen.
-    Critical for reliable multi-app workflows.
+    Prevents apps from resuming to the wrong screen.
     """
     subprocess.run(
         ["adb", "shell", "input", "keyevent", "KEYCODE_HOME"],
@@ -137,7 +137,6 @@ def execute_step(step):
         if verify_action(target[:5]):
             return True, f"Opened {target}"
         else:
-            # Retry once
             run_adb(f"adb shell monkey -p com.{target.lower()} -c android.intent.category.LAUNCHER 1")
             time.sleep(2)
             return verify_action(target[:5]), f"Opened {target} (retry)"
@@ -163,7 +162,6 @@ def execute_step(step):
 
     # ── Type (supports memory recall) ──
     elif action == "type":
-        # If the target is a memory key, use the stored value
         value = recall(target)
         text_to_type = value if value else target
         run_adb(f'adb shell input text "{text_to_type}"')
@@ -192,7 +190,7 @@ def execute_step(step):
 def run_task(user_command):
     """
     Parse a natural language command, execute all steps,
-    and manage task memory across multiple apps.
+    manage task memory, and verify financial data.
     """
     print(f"\n{'='*60}")
     print(f"Task: {user_command}")
@@ -214,7 +212,7 @@ def run_task(user_command):
         target = step.get("target", "")
         print(f"Step {i+1}: {action} → {target}")
         
-        # ── Handle memory actions (not executed on the phone) ──
+        # ── Handle memory actions ──
         if action == "remember":
             remember(target, target)
             print(f"  ✅ Stored '{target}'\n")
@@ -231,14 +229,40 @@ def run_task(user_command):
         # ── Execute the step ──
         success, message = execute_step(step)
         
-        # If this was a read_screen and the next step is remember, auto-store
+        # ── Handle read_screen with financial verification ──
         if action == "read_screen" and success:
             extracted = message
             print(f"  ✅ Read: {extracted[:100]}...")
+            
+            # If next step is remember, check if it's financial data
             if i + 1 < len(steps) and steps[i+1].get("action") == "remember":
-                remember(steps[i+1].get("target"), extracted.strip())
-                print(f"  ✅ Auto-stored for next step\n")
-                continue
+                key = steps[i+1].get("target", "")
+                
+                # Check for financial terms
+                is_financial = any(
+                    fin_term in key.lower() 
+                    for fin_term in ["balance", "amount", "transaction", "payment", "₦", "$", "£", "salary", "debit", "credit", "account"]
+                )
+                
+                if is_financial:
+                    print(f"  🔍 Financial data detected. Running verification...")
+                    is_valid, verified_value, confidence = verify_financial_data()
+                    
+                    if is_valid and verified_value:
+                        remember(key, verified_value)
+                        print(f"  ✅ Verified ({confidence}): {verified_value}\n")
+                        success = True
+                        message = f"Verified and stored: {verified_value}"
+                    else:
+                        print(f"  ❌ Verification failed: {confidence}\n")
+                        success = False
+                        message = f"Verification failed: {confidence}"
+                else:
+                    # Non-financial data. Store directly.
+                    remember(key, extracted.strip())
+                    print(f"  ✅ Stored non-financial data\n")
+                    success = True
+                    message = "Read and stored"
         else:
             status = "✅" if success else "❌"
             print(f"  {status} {message}\n")
@@ -260,7 +284,7 @@ def run_task(user_command):
 # ============================================================
 if __name__ == "__main__":
     print("=" * 60)
-    print("Phone Agent v16 — Home Reset + Multi-App Workflows")
+    print("Phone Agent v17 — Numeric Verification + Multi-App")
     print("=" * 60)
     print("ADB:", run_adb("adb devices"))
     print("Ollama:", ask_ollama("Say 'ready'"))
